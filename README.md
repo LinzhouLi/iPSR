@@ -19,7 +19,7 @@ Prerequires:
 - Visual Studio 17 2022
 
 ```bash
-git clone https://github.com/LinzhouLi/iPSR
+git clone https://github.com/LinzhouLi/iPSR.git
 cd iPSR
 mkdir build
 cd build
@@ -33,6 +33,6 @@ or use cmake GUI:
 
 ## Reference
 
-Iterative Poisson Surface Reconstruction (iPSR) for Unoriented Points
-[Fei Hou](https://lcs.ios.ac.cn/~houf/), Chiyu Wang, [Wencheng Wang](https://lcs.ios.ac.cn/~whn/), [Hong Qin](https://www3.cs.stonybrook.edu/~qin/), Chen Qian, [Ying He](https://personal.ntu.edu.sg/yhe/)
+Iterative Poisson Surface Reconstruction (iPSR) for Unoriented Points <br>
+[Fei Hou](https://lcs.ios.ac.cn/~houf/), Chiyu Wang, [Wencheng Wang](https://lcs.ios.ac.cn/~whn/), [Hong Qin](https://www3.cs.stonybrook.edu/~qin/), Chen Qian, [Ying He](https://personal.ntu.edu.sg/yhe/) <br>
 *ACM Transactions on Graphics, 41, 4, Article 128, 13 pages. (SIGGRAPH 2022)*
