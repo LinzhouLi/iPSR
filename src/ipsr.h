@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <Eigen/Dense>
 #include "open3d/Open3D.h"
 
 class iPSR {
@@ -9,7 +11,10 @@ private:
     std::shared_ptr<open3d::visualization::Visualizer> visualizer_;
     std::shared_ptr<open3d::geometry::PointCloud> pointCloud_;
 
-    void nomalRandomInit();
+    void normalRandomInit();
+    void normalEstimate();
+    void normalVisibilityInit();
+    std::vector<size_t> hiddenPointRemoval(Eigen::Vector3d camera);
     void visualize(std::shared_ptr<open3d::geometry::Geometry> geometry) {
         if (visualizer_ && geometry) {
             visualizer_->ClearGeometries();

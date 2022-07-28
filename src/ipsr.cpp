@@ -12,18 +12,152 @@ void iPSR::normalInit(const std::string& flag = "random") {
     }
     if (!pointCloud_->HasNormals()) {
         pointCloud_->normals_.resize(pointCloud_->points_.size());
+        pointCloud_->normals_.assign(pointCloud_->normals_.size(), Eigen::Vector3d(0.0, 0.0, 0.0));
     }
 
-    if (flag == "random") nomalRandomInit();
+    if (flag == "random") normalRandomInit();
+    else if (flag == "estimate") normalEstimate();
+    else if (flag == "visibility") normalVisibilityInit();
+
+    visualize(pointCloud_);
     
 }
 
-void iPSR::nomalRandomInit() {
+void iPSR::normalRandomInit() {
 
     for (auto itr = pointCloud_->normals_.begin(); itr != pointCloud_->normals_.end(); itr++) {
         *itr = Eigen::Vector3d::Random();
     }
     pointCloud_->NormalizeNormals();
+
+}
+
+void iPSR::normalEstimate() {
+
+    std::vector<bool> point_visibility(pointCloud_->points_.size(), false);
+
+    // Estimate normals
+    pointCloud_->EstimateNormals(open3d::geometry::KDTreeSearchParamKNN(20));
+    // pointCloud_->OrientNormalsConsistentTangentPlane(20);
+
+    // Calculate bonding box
+    open3d::geometry::AxisAlignedBoundingBox box = pointCloud_->GetAxisAlignedBoundingBox();
+    std::vector<Eigen::Vector3d> boxPoints = box.GetBoxPoints();
+
+    // Add 6 face center
+    boxPoints.push_back((boxPoints[1] + boxPoints[2]) / 2);
+    boxPoints.push_back((boxPoints[1] + boxPoints[3]) / 2);
+    boxPoints.push_back((boxPoints[1] + boxPoints[4]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[0]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[7]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[6]) / 2);
+
+    // Calculate radius
+    double radius = (box.max_bound_ - box.min_bound_).squaredNorm();
+    radius = 100 * std::sqrt(radius);
+
+    // Estimate normal orientation from visibility
+    for (Eigen::Vector3d& boxPoint : boxPoints) {
+        auto mesh_indices = pointCloud_->HiddenPointRemoval(
+            (boxPoint - box.GetCenter()) * 3 + box.GetCenter(),
+            radius
+        );
+        std::vector<size_t> indices = std::get<1>(mesh_indices);
+        for (auto index : indices) {
+            point_visibility[index] = true;
+            if (pointCloud_->normals_[index].dot(boxPoint - box.GetCenter()) < 0.0)
+                pointCloud_->normals_[index] = -pointCloud_->normals_[index];
+        }
+    }
+
+    // Random initialize invisible normal
+    for (int i = 0; i < pointCloud_->normals_.size(); i++) {
+        if (!point_visibility[i])
+            pointCloud_->normals_[i] = Eigen::Vector3d::Random();
+    }
+    pointCloud_->NormalizeNormals();
+
+}
+
+void iPSR::normalVisibilityInit() {
+
+    // Calculate bonding box
+    open3d::geometry::AxisAlignedBoundingBox box = pointCloud_->GetAxisAlignedBoundingBox();
+    std::vector<Eigen::Vector3d> boxPoints = box.GetBoxPoints();
+
+    // Add 6 face center
+    boxPoints.push_back((boxPoints[1] + boxPoints[2]) / 2);
+    boxPoints.push_back((boxPoints[1] + boxPoints[3]) / 2);
+    boxPoints.push_back((boxPoints[1] + boxPoints[4]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[0]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[7]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[6]) / 2);
+
+    // Add 12 edge center
+    boxPoints.push_back((boxPoints[0] + boxPoints[1]) / 2);
+    boxPoints.push_back((boxPoints[0] + boxPoints[2]) / 2);
+    boxPoints.push_back((boxPoints[1] + boxPoints[7]) / 2);
+    boxPoints.push_back((boxPoints[2] + boxPoints[7]) / 2);
+    boxPoints.push_back((boxPoints[4] + boxPoints[7]) / 2);
+    boxPoints.push_back((boxPoints[5] + boxPoints[2]) / 2);
+    boxPoints.push_back((boxPoints[3] + boxPoints[0]) / 2);
+    boxPoints.push_back((boxPoints[6] + boxPoints[1]) / 2);
+    boxPoints.push_back((boxPoints[4] + boxPoints[6]) / 2);
+    boxPoints.push_back((boxPoints[3] + boxPoints[6]) / 2);
+    boxPoints.push_back((boxPoints[4] + boxPoints[5]) / 2);
+    boxPoints.push_back((boxPoints[3] + boxPoints[3]) / 2);
+
+    // Calculate radius
+    double radius = (box.max_bound_ - box.min_bound_).squaredNorm();
+    radius = 100 * std::sqrt(radius);
+
+    // Estimate normal from visibility
+    for (Eigen::Vector3d& boxPoint : boxPoints) {
+        auto mesh_indices = pointCloud_->HiddenPointRemoval(
+            (boxPoint - box.GetCenter()) * 3 + box.GetCenter(),
+            radius
+        );
+        std::vector<size_t> indices = std::get<1>(mesh_indices);
+        for (auto index : indices)
+            pointCloud_->normals_[index] += (boxPoint - box.GetCenter()).normalized();
+    }
+
+    // Random initialize invisible normal
+    for (auto normal = pointCloud_->normals_.begin(); normal != pointCloud_->normals_.end(); normal++) {
+        if (normal->squaredNorm() < 1e-4)
+            *normal = Eigen::Vector3d::Random();
+    }
+    pointCloud_->NormalizeNormals();
+
+}
+
+std::vector<size_t> iPSR::hiddenPointRemoval(Eigen::Vector3d camera) {
+
+    // Calculate radius
+    double radius = -1.0;
+    open3d::geometry::PointCloud projectedPointCloud(pointCloud_->points_);
+    for (int i = 0; i < projectedPointCloud.points_.size(); i++) {
+        projectedPointCloud.points_[i] -= camera;
+        double length = projectedPointCloud.points_[i].squaredNorm();
+        if (length > radius)
+            radius = length;
+    }
+    radius = std::sqrt(radius);
+
+    // Perform spherical projection
+    for (int i = 0; i < projectedPointCloud.points_.size(); i++) {
+        double norm = projectedPointCloud.points_[i].squaredNorm();
+        norm = std::sqrt(norm);
+        if (norm == 0.0) norm = 0.0001;
+        projectedPointCloud.points_[i] += + 2 * (radius - norm) * projectedPointCloud.points_[i] / norm;
+    }
+
+    // Add camera position
+    projectedPointCloud.points_.push_back(Eigen::Vector3d(0.0, 0.0, 0.0));
+
+    // Compute convex hull
+    auto mesh_indices = projectedPointCloud.ComputeConvexHull();
+    return std::get<1>(mesh_indices);
 
 }
 
@@ -36,7 +170,7 @@ std::shared_ptr<open3d::geometry::TriangleMesh> iPSR::execute() {
     std::shared_ptr<open3d::geometry::TriangleMesh> resultMesh;
 
     // Random normal initialization
-    if (!pointCloud_->HasNormals()) nomalRandomInit();
+    if (!pointCloud_->HasNormals()) normalRandomInit();
     visualize(pointCloud_);
 
     // Build kd-tree
@@ -67,7 +201,7 @@ std::shared_ptr<open3d::geometry::TriangleMesh> iPSR::execute() {
             kdTree.SearchKNN(triangleCenter, k_neighbor_, kNeighborSamplePoints[i], distance2);
             faceNormals[i] = (resultMesh->vertices_[triangle(1)] - resultMesh->vertices_[triangle(0)])
                 .cross(resultMesh->vertices_[triangle(2)] - resultMesh->vertices_[triangle(0)]);
-            faceNormals[i].normalize();
+            //faceNormals[i].normalize();
         }
 
         // Update sample point normals
