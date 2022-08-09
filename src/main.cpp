@@ -2,12 +2,13 @@
 #include <string>
 #include <iostream>
 #include "open3d/Open3D.h"
+
 #include "ipsr.h"
 
 int main(int argc, char *argv[]) {
     
     auto cloud = std::make_shared<open3d::geometry::PointCloud>();
-    open3d::io::ReadPointCloudFromPLY("../../data/input/136-elk-99.ply", *cloud, open3d::io::ReadPointCloudOption());
+    open3d::io::ReadPointCloudFromPLY("../../data/input/bunny.ply", *cloud, open3d::io::ReadPointCloudOption());
 
     auto visualizer = std::make_shared<open3d::visualization::Visualizer>();
     visualizer->CreateVisualizerWindow("iPSR", 1440, 1080, 150, 300);
@@ -20,7 +21,7 @@ int main(int argc, char *argv[]) {
     iPSR ipsr;
     ipsr.setInputPointCloud(cloud);
     ipsr.setVisualizer(visualizer);
-    //ipsr.normalInit("visibility");
+    ipsr.normalInit("random");
     std::shared_ptr<open3d::geometry::TriangleMesh> mesh = ipsr.execute();
 
     visualizer->Run();
