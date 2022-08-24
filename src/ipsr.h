@@ -1298,9 +1298,7 @@ void iPSR::_execute(
     // Poisson surface reconstruction
     poissonReconstruction<Real, Dim>(
         resultMesh,
-        iXForm,
-        sample_weight,
-        FEMSigs()
+        XForm<Real, Dim + 1>::Identity()
     );
     visualize(resultMesh);
 
