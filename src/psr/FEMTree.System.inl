@@ -25,7 +25,7 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING 
 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
 DAMAGE.
 */
-
+#include <iostream>
 ///////////////////////////////////
 // BaseFEMIntegrator::Constraint //
 ///////////////////////////////////
@@ -40,12 +40,24 @@ void BaseFEMIntegrator::Constraint< UIntPack< TDegrees ... > , UIntPack< CDegree
 	if( IterateFirst )
 	{
 		for( int d=0 ; d<Dim ; d++ ) cOffset[d] = center;
-		WindowLoop< Dim >::Run( IsotropicUIntPack< Dim , 0 >() , UIntPack< BSplineOverlapSizes< TDegrees , CDegrees >::OverlapSize ... >() , [&]( int d , int i ){ femOffset[d] = i + center + overlapStart[d]; } , [&]( Point< double , CDim >& p ){ p = ccIntegrate( femOffset , cOffset ); } , stencil() );
+		WindowLoop< Dim >::Run( 
+			IsotropicUIntPack< Dim , 0 >() , 
+			UIntPack< BSplineOverlapSizes< TDegrees , CDegrees >::OverlapSize ... >() , // 5 5 5
+			[&]( int d , int i ){ femOffset[d] = i + center + overlapStart[d]; } , 
+			[&]( Point< double , CDim >& p ){ p = ccIntegrate( femOffset , cOffset ); } , 
+			stencil() 
+		);
 	}
 	else
 	{
 		for( int d=0 ; d<Dim ; d++ ) femOffset[d] = center;
-		WindowLoop< Dim >::Run( IsotropicUIntPack< Dim , 0 >() , UIntPack< BSplineOverlapSizes< TDegrees , CDegrees >::OverlapSize ... >() , [&]( int d , int i ){   cOffset[d] = i + center + overlapStart[d]; } , [&]( Point< double , CDim >& p ){ p = ccIntegrate( femOffset , cOffset );} , stencil() );
+		WindowLoop< Dim >::Run( 
+			IsotropicUIntPack< Dim , 0 >() , 
+			UIntPack< BSplineOverlapSizes< TDegrees , CDegrees >::OverlapSize ... >() , 
+			[&]( int d , int i ){ cOffset[d] = i + center + overlapStart[d]; } , 
+			[&]( Point< double , CDim >& p ){ p = ccIntegrate( femOffset , cOffset );} , 
+			stencil() 
+		);
 	}
 }
 template< unsigned int ... TDegrees , unsigned int ... CDegrees , unsigned int CDim >
@@ -172,10 +184,11 @@ Point< double , CDim > FEMIntegrator::Constraint< UIntPack< TSignatures ... > , 
 	{
 		const _WeightedIndices& w = _weightedIndices[i];
 		unsigned int _d1[Dim] , _d2[Dim];
-		TFactorDerivatives( w.d1 , _d1 );
-		CFactorDerivatives( w.d2 , _d2 );
+		TFactorDerivatives( w.d1 , _d1 ); // _d1 = [0 0 1]  [0 1 0]  [1 0 0]
+		CFactorDerivatives( w.d2 , _d2 ); // _d2 = [0 0 0]  [0 0 0]  [0 0 0]
 		double __integral = _integral( iType , off1 , off2 , _d1 , _d2 );
-		for( unsigned int j=0 ; j<w.indices.size() ; j++ ) integral[ w.indices[j].first ] += w.indices[j].second * __integral;
+		for( unsigned int j=0 ; j<w.indices.size() ; j++ ) 
+			integral[ w.indices[j].first ] += w.indices[j].second * __integral;
 	}
 	return integral;
 }
@@ -2492,16 +2505,31 @@ void FEMTree< Dim , Real >::_RegularGridUpSample( UIntPack< FEMSigs ... > , cons
 
 template< unsigned int Dim , class Real >
 template< unsigned int ... FEMSigs , typename T , typename TDotT , unsigned int ... PointDs >
-DenseNodeData< T , UIntPack< FEMSigs ... > > FEMTree< Dim , Real >::solveSystem( UIntPack< FEMSigs ... > , typename BaseFEMIntegrator::template System< UIntPack< FEMSignature< FEMSigs >::Degree ... > >& F , const DenseNodeData< T , UIntPack< FEMSigs ... > >& constraints , TDotT Dot , LocalDepth maxSolveDepth , const typename FEMTree< Dim , Real >::SolverInfo& solverInfo , InterpolationInfo< T , PointDs >* ... interpolationInfo ) const
-{
+DenseNodeData< T , UIntPack< FEMSigs ... > > FEMTree< Dim , Real >::solveSystem( 
+	UIntPack< FEMSigs ... > , 
+	typename BaseFEMIntegrator::template System< UIntPack< FEMSignature< FEMSigs >::Degree ... > >& F , 
+	const DenseNodeData< T , UIntPack< FEMSigs ... > >& constraints , 
+	TDotT Dot , 
+	LocalDepth maxSolveDepth , 
+	const typename FEMTree< Dim , Real >::SolverInfo& solverInfo , 
+	InterpolationInfo< T , PointDs >* ... interpolationInfo 
+) const {
 	DenseNodeData< T , UIntPack< FEMSigs ... > > solution;
 	solveSystem( UIntPack< FEMSigs ... >() , F , constraints , solution , Dot , maxSolveDepth , solverInfo , interpolationInfo... );
 	return solution;
 }
 template< unsigned int Dim , class Real >
 template< unsigned int ... FEMSigs , typename T , typename TDotT , unsigned int ... PointDs >
-void FEMTree< Dim , Real >::solveSystem( UIntPack< FEMSigs ... > , typename BaseFEMIntegrator::template System< UIntPack< FEMSignature< FEMSigs >::Degree ... > >& F , const DenseNodeData< T , UIntPack< FEMSigs ... > >& constraints , DenseNodeData< T , UIntPack< FEMSigs ... > >& solution , TDotT Dot , LocalDepth maxSolveDepth , const typename FEMTree< Dim , Real >::SolverInfo& solverInfo , InterpolationInfo< T , PointDs >* ... interpolationInfo ) const
-{
+void FEMTree< Dim , Real >::solveSystem( 
+	UIntPack< FEMSigs ... > , 
+	typename BaseFEMIntegrator::template System< UIntPack< FEMSignature< FEMSigs >::Degree ... > >& F , 
+	const DenseNodeData< T , UIntPack< FEMSigs ... > >& constraints , 
+	DenseNodeData< T , UIntPack< FEMSigs ... > >& solution , 
+	TDotT Dot , 
+	LocalDepth maxSolveDepth , 
+	const typename FEMTree< Dim , Real >::SolverInfo& solverInfo , 
+	InterpolationInfo< T , PointDs >* ... interpolationInfo 
+) const {
 	int baseDepth = solverInfo.baseDepth;
 	if( baseDepth>getFullDepth( UIntPack< FEMSignature< FEMSigs >::Degree ... >() ) ) ERROR_OUT( "Base depth cannot excceed full depth: " , baseDepth , " <= " , getFullDepth( UIntPack< FEMSignature< FEMSigs >::Degree ... >() ) );
 
@@ -2761,12 +2789,18 @@ template< unsigned int Dim , class Real > template< class Real1 > bool FEMTree< 
 
 template< unsigned int Dim , class Real >
 template< typename T , unsigned int ... FEMSigs , unsigned int ... CSigs , unsigned int ... FEMDegrees , unsigned int ... CDegrees , unsigned int CDim , class Coefficients >
-void FEMTree< Dim , Real >::_addFEMConstraints( UIntPack< FEMSigs ... > , UIntPack< CSigs ... > , typename BaseFEMIntegrator::template Constraint< UIntPack< FEMDegrees ... > , UIntPack< CDegrees ... > , CDim >& F , const Coefficients& coefficients , Pointer( T ) constraints , LocalDepth maxDepth ) const
-{
+void FEMTree< Dim , Real >::_addFEMConstraints( 
+	UIntPack< FEMSigs ... > , // FEMSigs
+	UIntPack< CSigs ... > , // NormalSigs
+	typename BaseFEMIntegrator::template Constraint< UIntPack< FEMDegrees ... > , UIntPack< CDegrees ... > , CDim >& F , 
+	const Coefficients& coefficients , // vector field
+	Pointer( T ) constraints , // T = Real
+	LocalDepth maxDepth 
+) const {
 	_setFEM1ValidityFlags( UIntPack< FEMSigs ... >() );
 	_setFEM2ValidityFlags( UIntPack<   CSigs ... >() );
-	typedef typename BaseFEMIntegrator::template Constraint< UIntPack< FEMDegrees ... > , UIntPack< CDegrees ... > , CDim > BaseConstraint;
-	typedef typename Coefficients::data_type D;
+	typedef typename BaseFEMIntegrator::template Constraint< UIntPack< FEMDegrees ... > , UIntPack< CDegrees ... > , CDim > BaseConstraint; // FEMDegrees = CDegrees = 2 2 2
+	typedef typename Coefficients::data_type D; // Point<Real, Dim>
 	typedef UIntPack< (  BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapSize  ) ... >          OverlapSizes;
 	typedef UIntPack< ( -BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapStart ) ... >  LeftCFEMOverlapRadii;
 	typedef UIntPack< (  BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapEnd   ) ... > RightCFEMOverlapRadii;
@@ -2781,15 +2815,17 @@ void FEMTree< Dim , Real >::_addFEMConstraints( UIntPack< FEMSigs ... > , UIntPa
 	memset( _constraints , 0 , sizeof(T)*( _sNodesEnd(maxDepth-1) ) );
 	MemoryUsage();
 
-	static const WindowLoopData< UIntPack< BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapSize ... > > cfemLoopData( []( int c , int* start , int* end ){ BaseFEMIntegrator::ParentOverlapBounds( UIntPack< CDegrees ... >() , UIntPack< FEMDegrees ... >() , c , start , end ); } );
-	static const WindowLoopData< UIntPack< BSplineOverlapSizes< FEMDegrees , CDegrees >::OverlapSize ... > > femcLoopData( []( int c , int* start , int* end ){ BaseFEMIntegrator::ParentOverlapBounds( UIntPack< FEMDegrees ... >() , UIntPack< CDegrees ... >() , c , start , end ); } );
+	static const WindowLoopData< UIntPack< BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapSize ... > > 
+		cfemLoopData( []( int c , int* start , int* end ){ BaseFEMIntegrator::ParentOverlapBounds( UIntPack< CDegrees ... >() , UIntPack< FEMDegrees ... >() , c , start , end ); } );
+	static const WindowLoopData< UIntPack< BSplineOverlapSizes< FEMDegrees , CDegrees >::OverlapSize ... > > 
+		femcLoopData( []( int c , int* start , int* end ){ BaseFEMIntegrator::ParentOverlapBounds( UIntPack< FEMDegrees ... >() , UIntPack< CDegrees ... >() , c , start , end ); } );
 
 	bool hasCoarserCoefficients = false;
 	// Iterate from fine to coarse, setting the constraints @(depth) and the cumulative constraints @(depth-1)
 	for( LocalDepth d=maxDepth ; d>=0 ; d-- )
 	{
-		typename BaseConstraint::CCStencil  stencil;
-		typename BaseConstraint::PCStencils stencils;
+		typename BaseConstraint::CCStencil  stencil; // DynamicWindow
+		typename BaseConstraint::PCStencils stencils; // DynamicWindow
 		F.init( d );
 		F.template setStencil < false >( stencil  );
 		F.template setStencils< true  >( stencils );
@@ -2800,7 +2836,7 @@ void FEMTree< Dim , Real >::_addFEMConstraints( UIntPack< FEMSigs ... > , UIntPa
 			if( d<maxDepth ) constraints[i] += _constraints[i];
 			ConstOneRingNeighborKey& neighborKey = neighborKeys[ thread ];
 			FEMTreeNode* node = _sNodes.treeNodes[i];
-			int start[Dim] , end[] = { BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapSize ... };
+			int start[Dim] , end[] = { BSplineOverlapSizes< CDegrees , FEMDegrees >::OverlapSize ... }; // 5 5 5
 			memset( start , 0 , sizeof( start ) );
 			typename FEMTreeNode::template ConstNeighbors< OverlapSizes > neighbors;
 			neighborKey.getNeighbors( LeftFEMCOverlapRadii() , RightFEMCOverlapRadii() , node , neighbors );

@@ -37,8 +37,7 @@
 static const int DATA_DEGREE = 2;
 // The order of the B-Spline used to splat in the weights for density estimation
 static const int WEIGHT_DEGREE = 2;
-// The order of the B-Spline used to splat in the normals for constructing the
-// Laplacian constraints
+// The order of the B-Spline used to splat in the normals for constructing the Laplacian constraints
 static const int NORMAL_DEGREE = 2;
 // The default finite-element degree
 static const int DEFAULT_FEM_DEGREE = 1;
@@ -192,8 +191,7 @@ template <unsigned int Dim, typename Real>
 struct ConstraintDual {
     Real target, weight;
     ConstraintDual(Real t, Real w) : target(t), weight(w) {}
-    CumulativeDerivativeValues<Real, Dim, 0> operator()(
-        const Point<Real, Dim>& p) const {
+    CumulativeDerivativeValues<Real, Dim, 0> operator()( const Point<Real, Dim>& p) const {
         return CumulativeDerivativeValues<Real, Dim, 0>(target * weight);
     };
 };
@@ -229,7 +227,14 @@ struct SystemDual<Dim, double> {
 
 class iPSR {
 public:
-    iPSR(int iter_num = 20, int k_neighbor = 10, int depth = 8) :
+
+    class Transform {
+    public:
+        double scale;
+        Eigen::Vector3d translation;
+    };
+
+    iPSR(int iter_num = 20, int k_neighbor = 10, int depth = 10) :
         iter_num_(iter_num),
         k_neighbor_(k_neighbor),
         depth_(depth),
@@ -252,13 +257,11 @@ public:
         else normalRandomInit();
 
     }
-    void setInputPointCloud(
-        std::shared_ptr<open3d::geometry::PointCloud> pointCloud) {
+    void setInputPointCloud(std::shared_ptr<open3d::geometry::PointCloud> pointCloud) {
         pointCloud_ = pointCloud;
         //visualize(pointCloud_);
     }
-    void setVisualizer(
-        std::shared_ptr<open3d::visualization::Visualizer> visualizer) {
+    void setVisualizer(std::shared_ptr<open3d::visualization::Visualizer> visualizer) {
         visualizer_ = visualizer;
         //visualize(pointCloud_);
     }
@@ -270,6 +273,7 @@ private:
     float scale_;
     std::shared_ptr<open3d::visualization::Visualizer> visualizer_;
     std::shared_ptr<open3d::geometry::PointCloud> pointCloud_;
+    Transform transform_;
 
     void normalRandomInit();
     void normalEstimate();
@@ -285,6 +289,9 @@ private:
         }
     }
 
+    void convertPointCloud();
+    void convertPointCloud(std::shared_ptr<open3d::geometry::PointCloud> pointCloud);
+
     template <class Real, unsigned int Dim>
     void _execute(std::shared_ptr<open3d::geometry::TriangleMesh> out_mesh);
 
@@ -294,12 +301,10 @@ private:
         std::vector<Real>& sample_weight
     );
 
-    template <typename Real, unsigned int Dim, unsigned int... FEMSigs>
+    template <typename Real, unsigned int Dim>
     void poissonReconstruction(
         std::shared_ptr<open3d::geometry::TriangleMesh>& out_mesh,
-        const XForm<Real, Dim + 1>& iXForm,
-        const std::vector<Real>& sample_weight,
-        UIntPack<FEMSigs...>
+        const XForm<Real, Dim + 1>& iXForm
     );
 
 };
@@ -386,6 +391,205 @@ XForm<Real, Dim + 1> GetPointXForm(
     Point<Real, Dim> min, max;
     stream.boundingBox(min, max);
     return GetBoundingBoxXForm(min, max, scaleFactor);
+}
+
+template <unsigned int Dim, class Real>
+void nodeStartAndWidth(
+    typename FEMTree<Dim, Real>::FEMTreeNode* node, 
+    Point< Real, Dim >& start,
+    Real& width
+) {
+
+    int d, off[Dim];
+    node->depthAndOffset(d, off);
+    width = Real(1.0 / (1 << d));
+    for (int dd = 0; dd < Dim; dd++) start[dd] = Real(off[dd]) * width;
+
+}
+
+template <unsigned int Dim, class Real>
+typename FEMTree<Dim, Real>::FEMTreeNode* findNode(
+    typename FEMTree<Dim, Real>::FEMTreeNode* root, 
+    Eigen::Vector3d pos
+) {
+    
+    typename FEMTree<Dim, Real>::FEMTreeNode* node = root;
+    Point< Real, Dim > center, position;
+    for (int d = 0; d < Dim; d++) center[d] = (Real)0.5, position[d] = pos[d];
+    Real width = Real(1.0);
+
+    while (node->children) {
+        int cIndex = FEMTree<Dim, Real>::FEMTreeNode::ChildIndex(center, position);
+        node = node->children + cIndex;
+        width /= 2;
+        for (int dd = 0; dd < Dim; dd++)
+            if ((cIndex >> dd) & 1) center[dd] += width / 2;
+            else                   center[dd] -= width / 2;
+    }
+
+    return node;
+
+}
+
+template <unsigned int Dim, class Real>
+std::shared_ptr< open3d::geometry::PointCloud> visualizeOctree(typename FEMTree<Dim, Real>::FEMTreeNode* root) {
+
+    std::shared_ptr< open3d::geometry::PointCloud> pc = std::make_shared<open3d::geometry::PointCloud>();
+
+    int d = 0, count = 0;
+    int off[Dim] = { 0, 0, 0 };
+
+    std::function< void(int&, int[Dim]) > ParentDepthAndOffset = [](int& d, int off[Dim]) { d--; for (int _d = 0; _d < Dim; _d++) off[_d] >>= 1; };
+    std::function< void(int&, int[Dim]) >  ChildDepthAndOffset = [](int& d, int off[Dim]) { d++; for (int _d = 0; _d < Dim; _d++) off[_d] <<= 1; };
+    std::function< FEMTree<Dim, Real>::FEMTreeNode* (FEMTree<Dim, Real>::FEMTreeNode*, int&, int[]) > _nextBranch = [&](typename FEMTree<Dim, Real>::FEMTreeNode* current, int& d, int off[Dim]) {
+        if (current == root) return (FEMTree<Dim, Real>::FEMTreeNode*)NULL;
+        else {
+            int c = (int)(current - current->parent->children);
+
+            if (c == (1 << Dim) - 1) {
+                ParentDepthAndOffset(d, off);
+                return _nextBranch(current->parent, d, off);
+            }
+            else {
+                ParentDepthAndOffset(d, off); ChildDepthAndOffset(d, off);
+                for (int _d = 0; _d < Dim; _d++) off[_d] |= (((c + 1) >> _d) & 1);
+                return current + 1;
+            }
+        }
+    };
+    auto _nextNode = [&](typename FEMTree<Dim, Real>::FEMTreeNode* current, int& d, int off[Dim]) { // traverse node
+        if (!current) return root;
+        else if (current->children) {
+            ChildDepthAndOffset(d, off);
+            return current->children;
+        }
+        else return _nextBranch(current, d, off);
+    };
+
+    for (typename FEMTree<Dim, Real>::FEMTreeNode* node = _nextNode(NULL, d, off); node; node = _nextNode(node, d, off)) {
+        count++;
+        Real width = Real(1.0 / (1 << d));
+        pc->points_.push_back(Eigen::Vector3d(off[0] + 0.5, off[1] + 0.5, off[2] + 0.5) * width);
+        if (node->nodeData.getGhostFlag()) pc->colors_.push_back(Eigen::Vector3d(0, 0, 1));
+        else pc->colors_.push_back(Eigen::Vector3d(0, 1, 0));
+    }
+    std::cout << count << std::endl;
+
+    return pc;
+
+}
+
+template <unsigned int Dim, class Real, unsigned int WeightDegree>
+Real getNodeDensity(
+    typename FEMTree<Dim, Real>::template DensityEstimator<WeightDegree>& density,
+    typename FEMTree<Dim, Real>::FEMTreeNode* node,
+    Point< Real, Dim > position,
+    PointSupportKey< IsotropicUIntPack< Dim, WeightDegree > >& densityKey
+) {
+
+    while (node->depth() > density.kernelDepth()) node = node->parent;
+
+    Real weight = 0;
+    double values[Dim][BSplineSupportSizes< WeightDegree >::SupportSize];
+    typename FEMTree<Dim, Real>::FEMTreeNode::template Neighbors< IsotropicUIntPack< Dim, BSplineSupportSizes< WeightDegree >::SupportSize > >&
+        neighbors = densityKey.getNeighbors(node);
+
+    Point< Real, Dim > start;
+    Real width;
+    nodeStartAndWidth(node, start, width);
+
+    for (int dim = 0; dim < Dim; dim++) 
+        Polynomial< WeightDegree >::BSplineComponentValues((position[dim] - start[dim]) / width, values[dim]);
+    double scratch[Dim + 1];
+    scratch[0] = 1;
+    WindowLoop< Dim >::Run(
+        IsotropicUIntPack< Dim, 0 >(),
+        IsotropicUIntPack< Dim, BSplineSupportSizes< WeightDegree >::SupportSize >(),
+        [&](int d, int i) {
+            scratch[d + 1] = scratch[d] * values[d][i];
+        },
+        [&](typename FEMTree<Dim, Real>::FEMTreeNode* node) {
+            if (node) {
+                const Real* w = density(node);
+                if (w) weight += (Real)(scratch[Dim] * (*w));
+            }
+        },
+        neighbors.neighbors()
+    );
+
+    return weight;
+
+}
+
+template< unsigned int Dim, class Real, unsigned int WeightDegree>
+void getSampleDepthAndWeight(
+    typename FEMTree<Dim, Real>::PointSample sample,
+    typename FEMTree<Dim, Real>::template DensityEstimator<WeightDegree>& density,
+    PointSupportKey< IsotropicUIntPack< Dim, WeightDegree > >& densityKey,
+    Real& depth,
+    Real& weight
+) {
+
+    typename FEMTree<Dim, Real>::FEMTreeNode* node = sample.node;
+    Point< Real, Dim > position = sample.sample.data / sample.sample.weight;
+    while (node->depth() > density.kernelDepth()) node = node->parent;
+    
+    weight = getNodeDensity<Dim, Real, WeightDegree>(density, node, position, densityKey);
+    if (weight >= (Real)1.)
+        depth = Real(node->depth() + log(weight) / log(double(1 << (Dim - density.coDimension()))));
+    else {
+        Real oldWeight, newWeight;
+        oldWeight = newWeight = weight;
+        while (newWeight < (Real)1. && node->depth())
+        {
+            node = node->parent;
+            oldWeight = newWeight;
+            newWeight = getNodeDensity<Dim, Real, WeightDegree>(density, node, position, densityKey);
+        }
+        depth = Real(node->depth() + log(newWeight) / log(newWeight / oldWeight));
+    }
+    weight = Real(pow(double(1 << (Dim - density.coDimension())), -double(depth)));
+
+}
+
+void iPSR::convertPointCloud() { // convert to [0, 1]^3
+
+    // Calculate bonding box
+    open3d::geometry::AxisAlignedBoundingBox box = pointCloud_->GetAxisAlignedBoundingBox();
+    Eigen::Vector3d minBound = box.GetMinBound(), maxBound = box.GetMaxBound();
+
+    // Calculate scale
+    double scale = maxBound[0] - minBound[0];
+    for (int d = 1; d < 3; d++) {
+        scale = std::max<double>(scale, maxBound[d] - minBound[d]);
+    }
+    scale *= scale_;
+
+    // Calcelate translation
+    Eigen::Vector3d translation = Eigen::Vector3d(scale, scale, scale) / 2.0 - box.GetCenter();
+
+    // Convert
+    ThreadPool::Parallel_for(
+        0, pointCloud_->points_.size(),
+        [&](unsigned int thread, size_t i) {
+            pointCloud_->points_[i] = (pointCloud_->points_[i] + translation) / scale;
+        }
+    );
+
+    transform_.scale = scale;
+    transform_.translation = translation;
+
+}
+
+void iPSR::convertPointCloud(std::shared_ptr<open3d::geometry::PointCloud> pointCloud) {
+
+    ThreadPool::Parallel_for(
+        0, pointCloud->points_.size(),
+        [&](unsigned int thread, size_t i) {
+            pointCloud->points_[i] = (pointCloud->points_[i] + transform_.translation) / transform_.scale;
+        }
+    );
+
 }
 
 
@@ -672,25 +876,27 @@ void ExtractMesh(
 }
 
 
-template <typename Real, unsigned int Dim, unsigned int... FEMSigs>
+template <typename Real, unsigned int Dim>
 void iPSR::poissonReconstruction(
     std::shared_ptr<open3d::geometry::TriangleMesh>& out_mesh,
-    const XForm<Real, Dim + 1>& iXForm,
-    const std::vector<Real>& sample_weight,
-    UIntPack<FEMSigs...>
+    const XForm<Real, Dim + 1>& iXForm
 ) {
 
-    using Sigs = UIntPack<FEMSigs...>;
-    using Degrees = UIntPack<FEMSignature<FEMSigs>::Degree...>;
+    static const unsigned int FEMSig = FEMDegreeAndBType<DATA_DEGREE, DEFAULT_FEM_BOUNDARY>::Signature; // 2 * 3 + 1 
+    static const unsigned int NormalSig = FEMDegreeAndBType<NORMAL_DEGREE, DEFAULT_FEM_BOUNDARY>::Signature; // 2 * 3 + 1 
+    
+    using FEMSigs = IsotropicUIntPack<Dim, FEMSig>; // 7 7 7 
+    using Degrees = IsotropicUIntPack<Dim, DATA_DEGREE>; // 2 2 2
+    using NormalSigs = IsotropicUIntPack<Dim, NormalSig>; // 7 7 7
+
     using InterpolationInfo = typename FEMTree<Dim, Real>::template InterpolationInfo<Real, 0>;
     using DensityEstimator = typename FEMTree<Dim, Real>::template DensityEstimator<WEIGHT_DEGREE>;
-    using NormalSigs = UIntPack<FEMDegreeAndBType<NORMAL_DEGREE, DerivativeBoundary<FEMSignature<FEMSigs>::BType, 1>::BType>::Signature...>;
 
     float datax = 32.f;
     int base_depth = 0;
     int base_v_cycles = 1;
     float point_weight = 10.f;
-    float samples_per_node = 1.5f; // 
+    float samples_per_node = 1.5f;
     float cg_solver_accuracy = 1e-3f;
     int full_depth = 5;
     int iters = 8;
@@ -700,7 +906,7 @@ void iPSR::poissonReconstruction(
     FEMTreeProfiler<Dim, Real> profiler(tree);
 
     size_t pointCount;
-    std::vector<typename FEMTree<Dim, Real>::PointSample> samples; // coordinate
+    std::vector<typename FEMTree<Dim, Real>::PointSample> samples; // coordinate (type = NodeAndPointSample)
     std::vector<Open3DData> sampleData; // normal ( and color )
     Real isoValue = (Real)0;
     Real targetValue = (Real)0.5;
@@ -722,7 +928,7 @@ void iPSR::poissonReconstruction(
             depth_,
             samples,
             sampleData,
-            true,
+            true, // mergeNodeSamples
             tree.nodeAllocators[0],
             tree.initializer(),
             [](const Point<Real, Dim>& p, Open3DData& d) {
@@ -732,19 +938,19 @@ void iPSR::poissonReconstruction(
                 return (Real)1.;
             }
         );
-        ThreadPool::Parallel_for(
+        /*ThreadPool::Parallel_for(
             0, samples.size(),
             [&](unsigned int thread, size_t i) {
                 Real weight = sample_weight[i];
                 samples[i].sample.weight = weight;
                 samples[i].sample.data *= weight;
             }
-        );
+        );*/
     }
     
-    DenseNodeData<Real, Sigs> solution;
+    DenseNodeData<Real, FEMSigs> solution;
     {
-        DenseNodeData<Real, Sigs> constraints;
+        DenseNodeData<Real, FEMSigs> constraints;
         InterpolationInfo* iInfo = NULL;
         int solveDepth = depth_;
 
@@ -756,6 +962,46 @@ void iPSR::poissonReconstruction(
             density = tree.template setDensityEstimator<WEIGHT_DEGREE>(samples, kernelDepth, samples_per_node, 1);
             profiler.dumpOutput("#   Got kernel density:");
         }
+
+        //{
+        //    visualizer_->ClearGeometries();
+        //    auto pc = std::make_shared<open3d::geometry::PointCloud>();
+        //    PointSupportKey< IsotropicUIntPack< Dim, WEIGHT_DEGREE > > densityKey;
+        //    densityKey.set(depth_);
+
+        //    for (int i = 0; i < samples.size(); i++) {
+        //        Point< Real, Dim > pos = samples[i].sample.data / samples[i].sample.weight;
+        //        Eigen::Vector3d norm = sampleData[i].normal_ / samples[i].sample.weight;
+
+        //        typename FEMTree<Dim, Real>::FEMTreeNode* node = samples[i].node;
+        //        Real _weight = getNodeDensity<Dim, Real, WEIGHT_DEGREE>(*density, node, pos, densityKey);
+
+        //        if (_weight > 1.5) {
+        //            Real depth, weight;
+        //            getSampleDepthAndWeight<Dim, Real, WEIGHT_DEGREE>(samples[i], *density, densityKey, depth, weight);
+
+        //            while (node->depth() > floor(depth)) node = node->parent;
+        //            Point<Real, Dim> start;
+        //            Real width;
+        //            nodeStartAndWidth(node, start, width);
+        //            auto box = std::make_shared<open3d::geometry::AxisAlignedBoundingBox>(
+        //                Eigen::Vector3d(start[0], start[1], start[2]),
+        //                Eigen::Vector3d(start[0] + width, start[1] + width, start[2] + width)
+        //            );
+        //            box->color_ = Eigen::Vector3d(1, 0, 0);
+        //            std::cout << node->depth() << " " << width << " " << start[0] << " " << start[1] << " " << start[2] << std::endl;
+
+        //            pc->points_.push_back(Eigen::Vector3d(pos[0], pos[1], pos[2]));
+        //            pc->normals_.push_back(Eigen::Vector3d(norm[0], norm[1], norm[2]));
+        //            visualizer_->AddGeometry(box);
+        //        }
+        //        
+        //    }
+
+        //    visualizer_->AddGeometry(pc);
+        //    visualizer_->PollEvents();
+        //    visualizer_->UpdateRender();
+        //}
         
         // Transform the Hermite samples into a vector field
         {
@@ -765,14 +1011,28 @@ void iPSR::poissonReconstruction(
                 ConversionFunction = [](Open3DData in, Point<Real, Dim>& out) { // Open3DData => Normal
                 Point<Real, Dim> n(in.normal_(0), in.normal_(1), in.normal_(2));
                 Real l = (Real)Length(n);
-                if (!l) return false; // It is possible that the samples have non-zero normals
+                if (!l) return false; // It is possible that the samples have non-zero normals but there are two co-located samples with negative normals...
                 out = n / l;
                 return true;
             };
+            std::function<bool(Open3DData, Point<Real, Dim>&, Real&)>
+                ConversionAndBiasFunction = [&](Open3DData in, Point<Real, Dim>& out, Real& bias) {
+                Point<Real, Dim> n(in.normal_(0), in.normal_(1), in.normal_(2));
+                Real l = (Real)Length(n);
+                if (!l) return false;
+                out = n / l;
+                bias = (Real)(log(l) / log(1 << (Dim - 1)));
+                return true;
+            };
             *normalInfo = tree.setDataField(
-                NormalSigs(), samples, sampleData, density,
-                pointWeightSum, ConversionFunction
-            );
+                NormalSigs(), 
+                samples, 
+                sampleData, 
+                density,
+                pointWeightSum, 
+                ConversionFunction
+            ); // node count = 65737
+
             ThreadPool::Parallel_for( // normal = -normal
                 0, normalInfo->size(),
                 [&](unsigned int, size_t i) { (*normalInfo)[i] *= (Real)-1.; }
@@ -780,43 +1040,44 @@ void iPSR::poissonReconstruction(
             profiler.dumpOutput("#     Got normal field:");
             open3d::utility::LogDebug("Point weight / Estimated Area: {:e} / {:e}", pointWeightSum, pointCount * pointWeightSum);
         }
+
+        
         
         // Trim the tree and prepare for multigrid
         {
             profiler.start();
-            constexpr int MAX_DEGREE = NORMAL_DEGREE > Degrees::Max() ? NORMAL_DEGREE : Degrees::Max();
+            constexpr int MAX_DEGREE = NORMAL_DEGREE > Degrees::Max() ? NORMAL_DEGREE : Degrees::Max(); // = 2
             tree.template finalizeForMultigrid<MAX_DEGREE>(
                 full_depth,
                 typename FEMTree<Dim, Real>::template HasNormalDataFunctor<NormalSigs>(*normalInfo),
                 normalInfo,
                 density
-            );
+            ); // node count = 106049
+            //visualize(visualizeOctree<Dim, Real>(&tree.spaceRoot()));
             profiler.dumpOutput("#       Finalized tree:");
         }
         
         // Add the FEM constraints
         {
             profiler.start();
-            constraints = tree.initDenseNodeData(Sigs());
+            constraints = tree.initDenseNodeData(FEMSigs());
             typename FEMIntegrator::template Constraint<
-                Sigs,
+                FEMSigs,
                 IsotropicUIntPack<Dim, 1>,
                 NormalSigs,
                 IsotropicUIntPack<Dim, 0>,
                 Dim
             > F;
-            unsigned int derivatives2[Dim];
+            //std::cout << BSplineOverlapSizes< 2, 2 >::OverlapStart << std::endl;
+            unsigned int derivatives1[Dim], derivatives2[Dim];
             for (unsigned int d = 0; d < Dim; d++) derivatives2[d] = 0;
-            using Derivatives1 = IsotropicUIntPack<Dim, 1>;
-            using Derivatives2 = IsotropicUIntPack<Dim, 0>;
             for (unsigned int d = 0; d < Dim; d++) {
-                unsigned int derivatives1[Dim];
                 for (unsigned int dd = 0; dd < Dim; dd++)
                     derivatives1[dd] = dd == d ? 1 : 0;
                 F.weights
                     [d]
-                    [TensorDerivatives<Derivatives1>::Index(derivatives1)]
-                    [TensorDerivatives<Derivatives2>::Index(derivatives2)]
+                    [TensorDerivatives< IsotropicUIntPack<Dim, 1> >::Index(derivatives1)] // 4 -> 2 -> 1
+                    [TensorDerivatives< IsotropicUIntPack<Dim, 0> >::Index(derivatives2)] // 0 -> 0 -> 0
                 = 1;
             }
             tree.addFEMConstraints(F, *normalInfo, constraints, solveDepth);
@@ -829,7 +1090,7 @@ void iPSR::poissonReconstruction(
         // Add the interpolation constraints
         if (point_weight > 0) {
             profiler.start();
-            if (exact_interpolation) {
+            if (exact_interpolation) { // not execute
                 iInfo = FEMTree<Dim, Real>::template InitializeExactPointInterpolationInfo<Real, 0>(
                     tree,
                     samples,
@@ -848,7 +1109,7 @@ void iPSR::poissonReconstruction(
                     true,
                     1
                 );
-            }
+            } // 106049
             tree.addInterpolationConstraints(constraints, solveDepth, *iInfo);
             profiler.dumpOutput("#Set point constraints:");
         }
@@ -871,8 +1132,8 @@ void iPSR::poissonReconstruction(
                 sInfo.sliceBlockSize = 1,
                 sInfo.baseDepth = base_depth,
                 sInfo.baseVCycles = base_v_cycles;
-            typename FEMIntegrator::template System<Sigs, IsotropicUIntPack<Dim, 1>> F({ 0., 1. });
-            solution = tree.solveSystem(Sigs(), F, constraints, solveDepth, sInfo, iInfo);
+            typename FEMIntegrator::template System<FEMSigs, IsotropicUIntPack<Dim, 1>> F({ 0., 1. });
+            solution = tree.solveSystem(FEMSigs(), F, constraints, solveDepth, sInfo, iInfo);
             profiler.dumpOutput("# Linear system solved:");
             if (iInfo) delete iInfo, iInfo = NULL;
         }
@@ -882,7 +1143,7 @@ void iPSR::poissonReconstruction(
     {
         profiler.start();
         double valueSum = 0, weightSum = 0;
-        typename FEMTree<Dim, Real>::template MultiThreadedEvaluator<Sigs, 0> evaluator(&tree, solution);
+        typename FEMTree<Dim, Real>::template MultiThreadedEvaluator<FEMSigs, 0> evaluator(&tree, solution);
         std::vector<double>
             valueSums(ThreadPool::NumThreads(), 0),
             weightSums(ThreadPool::NumThreads(), 0);
@@ -912,7 +1173,7 @@ void iPSR::poissonReconstruction(
     };
     std::vector<double> out_densities;
     ExtractMesh<Open3DVertex<Real>, Real>(
-        datax, false, UIntPack<FEMSigs...>(),
+        datax, false, FEMSigs(),
         tree, solution, isoValue, &samples,
         &sampleData, density, SetVertex, iXForm, out_mesh, out_densities
     );
@@ -926,42 +1187,51 @@ template <typename Real, unsigned int Dim>
 void iPSR::_execute(
     std::shared_ptr<open3d::geometry::TriangleMesh> out_mesh
 ) {
+    //std::cout << WindowIndex< UIntPack< 3, 3, 3 >, UIntPack< 1, 1, 1 > >::Index << std::endl; // 3x3x1 + 3x1 + 1
+    //std::cout << BSplineSupportSizes<WEIGHT_DEGREE>::SupportStart << " " // -1
+    //    << BSplineSupportSizes<WEIGHT_DEGREE>::SupportEnd << " "         // 1
+    //    << BSplineSupportSizes<WEIGHT_DEGREE>::SupportSize << std::endl; // 3
+    //std::cout << (-1 << 1) << std::endl; // = -2
 
-    using FEMSigs = IsotropicUIntPack<Dim, FEMDegreeAndBType<DATA_DEGREE, DEFAULT_FEM_BOUNDARY>::Signature>;
+    //double values[3];
+    //Polynomial<2>::BSplineComponentValues(0.5, values);
+    //std::cout << values[0] << " " << values[1] << " " << values[2] << std::endl;
 
     double startTime = Time();
     XForm<Real, Dim + 1> xForm, iXForm;
     xForm = XForm<Real, Dim + 1>::Identity();
+    iXForm = XForm<Real, Dim + 1>::Identity();
     std::vector<Real> sample_weight;
     auto resultMesh = std::make_shared<open3d::geometry::TriangleMesh>();
 
     // Random normal initialization
     if (!pointCloud_->HasNormals()) normalRandomInit();
 
+    // Convert point cloud to [0, 1]^3
+    convertPointCloud();
+
     // sample points with octree
-    {
+    /*{
         Open3DPointStream<Real> pointStream(pointCloud_);
         xForm = GetPointXForm<Real, Dim>(pointStream, (Real)scale_) * xForm;
         iXForm = xForm.inverse();
         pointStream.xform_ = &xForm;
         octreeSampePoints<Dim, Real>(pointStream, sample_weight);
-    }
+    }*/
 
     // Build kd-tree
     open3d::geometry::KDTreeFlann kdTree(*pointCloud_);
-    //visualize(pointCloud_);
+    visualize(pointCloud_);
 
     // iPSR iterations
-    for (int epoch = 0; epoch < 1; epoch++) {
+    for (int epoch = 0; epoch < iter_num_; epoch++) {
         std::cout << "Iter: " << epoch << std::endl;
         std::vector<Eigen::Vector3d> originNormals(pointCloud_->normals_);
 
         // Poisson surface reconstruction
         poissonReconstruction<Real, Dim>(
             resultMesh,
-            XForm<Real, Dim + 1>::Identity(),
-            sample_weight,
-            FEMSigs()
+            XForm<Real, Dim + 1>::Identity()
         );
         visualize(resultMesh);
         
@@ -1032,6 +1302,7 @@ void iPSR::_execute(
         sample_weight,
         FEMSigs()
     );
+    visualize(resultMesh);
 
 }
 

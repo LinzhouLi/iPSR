@@ -410,13 +410,13 @@ public:
 
 	struct FunctionIntegrator
 	{
-		template< unsigned int D1=Degree1 , unsigned int D2=Degree2 >
+		template< unsigned int D1=Degree1 , unsigned int D2=Degree2 > // D1 = 1   D2 = 0
 		struct Integrator
 		{
 		protected:
 			friend BSplineIntegrationData;
 			int _depth;
-			double _ccIntegrals[D1+1][D2+1][IndexSize][BSplineOverlapSizes< Degree1 , Degree2 >::OverlapSize];
+			double _ccIntegrals[D1+1][D2+1][IndexSize][BSplineOverlapSizes< Degree1 , Degree2 >::OverlapSize]; // [2][1][5][5]
 		public:
 			Integrator( void )
 			{

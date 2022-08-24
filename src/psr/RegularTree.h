@@ -199,6 +199,7 @@ public:
 
 		void set( int depth );
 
+		// without initializer
 		template< bool CreateNodes , bool ThreadSafe >
 		typename RegularTreeNode< Dim , NodeData , DepthAndOffsetType >::template Neighbors< UIntPack< ( LeftRadii + RightRadii + 1 ) ... > >& getNeighbors( RegularTreeNode* node , Allocator< RegularTreeNode >* nodeAllocator )
 		{
@@ -215,6 +216,7 @@ public:
 			return getNeighbors< false , false >( (RegularTreeNode*)node , NULL , initializer );
 		}
 
+		// without initializer
 		template< bool CreateNodes , bool ThreadSafe , unsigned int ... _LeftRadii , unsigned int ... _RightRadii >
 		void getNeighbors( UIntPack< _LeftRadii ... > , UIntPack< _RightRadii ... > ,       RegularTreeNode* node , Neighbors< UIntPack< ( _LeftRadii + _RightRadii + 1 ) ... > >& neighbors , Allocator< RegularTreeNode >* nodeAllocator )
 		{
@@ -225,6 +227,7 @@ public:
 		template< bool CreateNodes , bool ThreadSafe , typename NodeInitializer , unsigned int ... _LeftRadii , unsigned int ... _RightRadii >
 		void getNeighbors( UIntPack< _LeftRadii ... > , UIntPack< _RightRadii ... > ,       RegularTreeNode* node , Neighbors< UIntPack< ( _LeftRadii + _RightRadii + 1 ) ... > >& neighbors , Allocator< RegularTreeNode >* nodeAllocator , NodeInitializer &initializer );
 
+		// without nodeAllocator and initializer
 		template< unsigned int ... _LeftRadii , unsigned int ... _RightRadii >
 		void getNeighbors( UIntPack< _LeftRadii ... > , UIntPack< _RightRadii ... > , const RegularTreeNode* node , Neighbors< UIntPack< ( _LeftRadii + _RightRadii + 1 ) ... > >& neighbors )
 		{

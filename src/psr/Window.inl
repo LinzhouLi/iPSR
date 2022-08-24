@@ -40,17 +40,49 @@ protected:
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( int begin , int end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin ; i<end ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; _WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( begin , end , updateState , function , w[i] ... ); }
+		for( int i=begin ; i<end ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			_WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( 
+				begin , 
+				end , 
+				updateState , 
+				function , 
+				w[i] ... 
+			); 
+		}
 	}
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( const int* begin , const int* end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin[0] ; i<end[0] ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; _WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( begin+1 , end+1 , updateState , function , w[i] ... ); }
+		for( int i=begin[0] ; i<end[0] ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			_WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( 
+				begin+1 , 
+				end+1 , 
+				updateState , 
+				function , 
+				w[i] ... 
+			); 
+		}
 	}
 	template< unsigned int ... Begin , unsigned int ... End , typename UpdateFunction , typename ProcessFunction , class ... Windows >
-	static void Run( UIntPack< Begin ... > begin , UIntPack< End ... > end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
-	{
-		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; _WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( typename UIntPack< Begin ... >::Rest() , typename UIntPack< End ... >::Rest() , updateState , function , w[i] ... ); }
+	static void Run( 
+		UIntPack< Begin ... > begin , 
+		UIntPack< End ... > end , 
+		UpdateFunction& updateState , 
+		ProcessFunction& function , 
+		Windows ... w 
+	) {
+		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			_WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( 
+				typename UIntPack< Begin ... >::Rest() , 
+				typename UIntPack< End ... >::Rest() , 
+				updateState , 
+				function , 
+				w[i] ... 
+			); 
+		}
 	}
 
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
@@ -100,17 +132,44 @@ protected:
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( int begin , int end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin ; i<end ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; _WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( begin , end , updateState , function , w[i] ... ); }
+		for( int i=begin ; i<end ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			_WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( 
+				begin , 
+				end , 
+				updateState , 
+				function , 
+				w[i] ... 
+			); 
+		}
 	}
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( const int* begin , const int* end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin[0] ; i<end[0] ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; _WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( begin+1 , end+1 , updateState , function , w[i] ... ); }
+		for( int i=begin[0] ; i<end[0] ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			_WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( 
+				begin+1 , 
+				end+1 , 
+				updateState , 
+				function , 
+				w[i] ... 
+			); 
+		}
 	}
 	template< unsigned int ... Begin , unsigned int ... End , typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( UIntPack< Begin ... > begin , UIntPack< End ... > end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; _WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( typename UIntPack< Begin ... >::Rest() , typename UIntPack< End ... >::Rest() , updateState , function , w[i] ... ); }
+		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			_WindowLoop< WindowDimension , IterationDimensions , CurrentIteration-1 >::Run( 
+				typename UIntPack< Begin ... >::Rest() , 
+				typename UIntPack< End ... >::Rest() , 
+				updateState , 
+				function , 
+				w[i] ... 
+			); 
+		}
 	}
 
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
@@ -160,17 +219,26 @@ protected:
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( int begin , int end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin ; i<end ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=begin ; i<end ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( const int* begin , const int* end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin[0] ; i<end[0] ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=begin[0] ; i<end[0] ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 	template< unsigned int ... Begin , unsigned int ... End , typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( UIntPack< Begin ... > begin , UIntPack< End ... > end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ) { 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
@@ -221,17 +289,26 @@ protected:
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( int begin , int end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin ; i<end ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=begin ; i<end ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( const int* begin , const int* end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin[0] ; i<end[0] ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=begin[0] ; i<end[0] ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 	template< unsigned int ... Begin , unsigned int ... End , typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( UIntPack< Begin ... > begin , UIntPack< End ... > end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
@@ -283,17 +360,26 @@ protected:
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( int begin , int end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin ; i<end ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=begin ; i<end ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( const int* begin , const int* end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=begin[0] ; i<end[0] ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=begin[0] ; i<end[0] ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 	template< unsigned int ... Begin , unsigned int ... End , typename UpdateFunction , typename ProcessFunction , class ... Windows >
 	static void Run( UIntPack< Begin ... > begin , UIntPack< End ... > end , UpdateFunction& updateState , ProcessFunction& function , Windows ... w )
 	{
-		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ updateState( WindowDimension - CurrentDimension , i ) ; function( w[i] ... ); }
+		for( int i=UIntPack< Begin ... >::First ; i<UIntPack< End ... >::First ; i++ ){ 
+			updateState( WindowDimension - CurrentDimension , i ) ; 
+			function( w[i] ... ); 
+		}
 	}
 
 	template< typename UpdateFunction , typename ProcessFunction , class ... Windows >

@@ -31,6 +31,8 @@ DAMAGE.
 #include <climits>
 #include "MyMiscellany.h"
 
+#include <iostream>
+
 /////////////////////
 // FEMTreeNodeData //
 /////////////////////
@@ -50,7 +52,8 @@ double FEMTree< Dim , Real >::MemoryUsage( void )
 	return mem;
 }
 
-template< unsigned int Dim , class Real > FEMTree< Dim , Real >::FEMTree( size_t blockSize ) : _nodeInitializer( *this )
+template< unsigned int Dim , class Real > 
+FEMTree< Dim , Real >::FEMTree( size_t blockSize ) : _nodeInitializer( *this )
 {
 	if( blockSize )
 	{
@@ -66,7 +69,7 @@ template< unsigned int Dim , class Real > FEMTree< Dim , Real >::FEMTree( size_t
 	_tree->template initChildren< false >( nodeAllocators.size() ? nodeAllocators[0] : NULL , _nodeInitializer ) , _spaceRoot = _tree->children;
 	int offset[Dim];
 	for( int d=0 ; d<Dim ; d++ ) offset[d] = 0;
-	RegularTreeNode< Dim , FEMTreeNodeData , depth_and_offset_type >::ResetDepthAndOffset( _spaceRoot , 0 , offset );
+	RegularTreeNode< Dim , FEMTreeNodeData , depth_and_offset_type >::ResetDepthAndOffset( _spaceRoot , 0 , offset ); // let _spaceRoot->_depth = 0
 	_depthOffset = 0;
 	memset( _femSigs1 , -1 , sizeof( _femSigs1 ) );
 	memset( _femSigs2 , -1 , sizeof( _femSigs2 ) );
@@ -207,7 +210,7 @@ void FEMTree< Dim , Real >::_setFullDepth( UIntPack< Degrees ... > , Allocator< 
 }
 
 template< unsigned int Dim , class Real >
-template< bool ThreadSafe , unsigned int ... Degrees >
+template< bool ThreadSafe , unsigned int ... Degrees > // Degrees = 2 2 2
 void FEMTree< Dim , Real >::_setFullDepth( UIntPack< Degrees ... > , Allocator< FEMTreeNode > *nodeAllocator , LocalDepth depth )
 {
 	if( !_tree->children ) _tree->template initChildren< ThreadSafe >( nodeAllocator , _nodeInitializer );
@@ -300,10 +303,10 @@ FEMTree< Dim , Real >::setDensityEstimator(
 	Allocator< FEMTreeNode > *nodeAllocator = nodeAllocators.size() ? nodeAllocators[0] : NULL;
 	LocalDepth maxDepth = _spaceRoot->maxDepth();
 	splatDepth = std::max< LocalDepth >( 0 , std::min< LocalDepth >( splatDepth , maxDepth ) );
-	DensityEstimator< DensityDegree >* _density = new DensityEstimator< DensityDegree >( splatDepth , coDimension ); // DensityDegree = 2
+	DensityEstimator< DensityDegree >* _density = new DensityEstimator< DensityDegree >( splatDepth , coDimension ); // depth - 2, 1
 	DensityEstimator< DensityDegree >& density = *_density;
 	PointSupportKey< IsotropicUIntPack< Dim , DensityDegree > > densityKey; // DensityDegree = 2
-	densityKey.set( _localToGlobal( splatDepth ) );
+	densityKey.set( _localToGlobal( splatDepth ) ); // splatDepth + _depthOffset(=0) = depth - 2
 
 	std::vector< node_index_type > sampleMap( nodeCount() , -1 );
 	ThreadPool::Parallel_for( 0 , samples.size() , 
@@ -316,7 +319,7 @@ FEMTree< Dim , Real >::setDensityEstimator(
 		SetDensity = [&] ( FEMTreeNode* node )
 	{
 		ProjectiveData< Point< Real , Dim > , Real > sample;
-		LocalDepth d = _localDepth( node );
+		LocalDepth d = _localDepth( node ); // node->_depth
 		node_index_type idx = node->nodeData.nodeIndex;
 		if( node->children )
 			for( int c=0 ; c<(1<<Dim) ; c++ )
@@ -366,7 +369,7 @@ FEMTree< Dim , Real >::setDataField(
 	{
 		if( ConversionFunction( in , out ) )
 		{
-			bias = BiasFunction( in );
+			bias = BiasFunction( in ); // = 0
 			return true;
 		}
 		else return false;
@@ -385,18 +388,18 @@ FEMTree< Dim , Real >::setDataField(
 	Real& pointWeightSum , 
 	std::function< bool ( InData , OutData & , Real & ) > ConversionAndBiasFunction 
 ) {
-	LocalDepth maxDepth = _spaceRoot->maxDepth();
+	LocalDepth maxDepth = _spaceRoot->maxDepth(); // = depth
 	typedef PointSupportKey< IsotropicUIntPack< Dim , DensityDegree > > DensityKey;
 	typedef UIntPack< FEMSignature< DataSigs >::Degree ... > DataDegrees;
 	typedef PointSupportKey< UIntPack< FEMSignature< DataSigs >::Degree ... > > DataKey;
 
 	std::vector< DensityKey > densityKeys( ThreadPool::NumThreads() );
 	std::vector<    DataKey >    dataKeys( ThreadPool::NumThreads() );
-	bool oneKey = DensityDegree==DataDegrees::Min() && DensityDegree==DataDegrees::Max();
+	bool oneKey = DensityDegree==DataDegrees::Min() && DensityDegree==DataDegrees::Max(); // if DensityKey and DataKey are same 
 	for( size_t i=0 ; i<densityKeys.size() ; i++ ) 
 		densityKeys[i].set( _localToGlobal( maxDepth ) );
 	if( !oneKey ) for( size_t i=0 ; i<dataKeys.size() ; i++ ) 
-		dataKeys[i].set( _localToGlobal( maxDepth ) );
+		dataKeys[i].set( _localToGlobal( maxDepth ) ); // = depth
 	Real weightSum = 0;
 	pointWeightSum = 0;
 	SparseNodeData< OutData , UIntPack< DataSigs ... > > dataField;
@@ -422,10 +425,17 @@ FEMTree< Dim , Real >::setDataField(
 				if( density ) AddAtomic( 
 					_pointWeightSum , 
 					_splatPointData< true , true , DensityDegree , OutData , DataSigs ... >( 
-						nodeAllocator , *density , p , 
-						out , dataField , densityKey , 
+						nodeAllocator , 
+						*density , 
+						p , // point
+						out , // normal
+						dataField , 
+						densityKey , 
 						oneKey ? *( (DataKey*)&densityKey ) : dataKey , 
-						0 , maxDepth , Dim , depthBias 
+						0 , // minDepth
+						maxDepth , // maxDepth
+						Dim , 
+						depthBias // 0
 					) * sample.weight 
 				);
 				else
@@ -505,13 +515,18 @@ SparseNodeData< ProjectiveData< Data , Real > , IsotropicUIntPack< Dim , DataSig
 
 
 template< unsigned int Dim , class Real >
-template< unsigned int MaxDegree , class HasDataFunctor , class ... DenseOrSparseNodeData >
-void FEMTree< Dim , Real >::finalizeForMultigrid( LocalDepth fullDepth , const HasDataFunctor F , DenseOrSparseNodeData* ... data )
-{
+template< unsigned int MaxDegree , class HasDataFunctor , class ... DenseOrSparseNodeData > // MaxDegree = 2
+void FEMTree< Dim , Real >::finalizeForMultigrid( 
+	LocalDepth fullDepth , // = 5
+	const HasDataFunctor F , 
+	DenseOrSparseNodeData* ... data 
+) {
 	Allocator< FEMTreeNode > *nodeAllocator = nodeAllocators.size() ? nodeAllocators[0] : NULL;
 	_depthOffset = 1;
-	while( _localInset( 0 ) + BSplineEvaluationData< FEMDegreeAndBType< MaxDegree >::Signature >::Begin( 0 )<0 || _localInset( 0 ) + BSplineEvaluationData< FEMDegreeAndBType< MaxDegree >::Signature >::End( 0 )>(1<<_depthOffset) )
-	{
+	while( 
+		_localInset( 0 ) + BSplineEvaluationData< FEMDegreeAndBType< MaxDegree >::Signature >::Begin( 0 ) < 0 || 
+		_localInset( 0 ) + BSplineEvaluationData< FEMDegreeAndBType< MaxDegree >::Signature >::End( 0 ) > (1<<_depthOffset) 
+	) {
 		//                       +-+-+-+-+-+-+-+-+
 		//                       | | | | | | | | |
 		//                       +-+-+-+-+-+-+-+-+
@@ -535,23 +550,27 @@ void FEMTree< Dim , Real >::finalizeForMultigrid( LocalDepth fullDepth , const H
 		int corner = _depthOffset<=1 ? (1<<Dim)-1 : 0;
 		newSpaceRootParent[corner].children = _spaceRoot;
 		oldSpaceRootParent->children = newSpaceRootParent;
-		for( int c=0 ; c<(1<<Dim) ; c++ ) _spaceRoot[c].parent = newSpaceRootParent + corner , newSpaceRootParent[c].parent = oldSpaceRootParent;
+		for( int c=0 ; c<(1<<Dim) ; c++ ) 
+			_spaceRoot[c].parent = newSpaceRootParent + corner , 
+			newSpaceRootParent[c].parent = oldSpaceRootParent;
 		_depthOffset++;
-	}
+	} // _depthOffset = 2
 	int d=0 , off[Dim];
 	for( int d=0 ; d<Dim ; d++ ) off[d] = 0;
 	FEMTreeNode::ResetDepthAndOffset( _tree , d , off );
-	_maxDepth = _spaceRoot->maxDepth();
+	_maxDepth = _spaceRoot->maxDepth(); // = 8
 	// Make the low-resolution part of the tree be complete
-	fullDepth = std::max< LocalDepth >( 0 , std::min< LocalDepth >( _maxDepth , fullDepth ) );
+	fullDepth = std::max< LocalDepth >( 0 , std::min< LocalDepth >( _maxDepth , fullDepth ) ); // = 5
 	_setFullDepth< false >( IsotropicUIntPack< Dim , MaxDegree >() , nodeAllocator , fullDepth );
 	// Clear all the flags and make everything that is not low-res a ghost node
-	for( FEMTreeNode* node=_tree->nextNode() ; node ; node=_tree->nextNode( node ) ) node->nodeData.flags = 0 , SetGhostFlag< Dim >( node , _localDepth( node )>fullDepth );
+	for( FEMTreeNode* node=_tree->nextNode() ; node ; node=_tree->nextNode( node ) ) 
+		node->nodeData.flags = 0 , 
+		SetGhostFlag< Dim >( node , _localDepth( node )>fullDepth ); // node->parent
 
 	// Set the ghost nodes for the high-res part of the tree
 	_clipTree( F , fullDepth );
 
-	const int OverlapRadius = -BSplineOverlapSizes< MaxDegree , MaxDegree >::OverlapStart;
+	const int OverlapRadius = -BSplineOverlapSizes< MaxDegree , MaxDegree >::OverlapStart; // -(-2) = 2
 	int maxDepth = _tree->maxDepth( );
 	typedef typename FEMTreeNode::template NeighborKey< IsotropicUIntPack< Dim , OverlapRadius > , IsotropicUIntPack< Dim , OverlapRadius > > NeighborKey;
 
@@ -562,7 +581,8 @@ void FEMTree< Dim , Real >::finalizeForMultigrid( LocalDepth fullDepth , const H
 	{
 		std::vector< FEMTreeNode* > nodes;
 		auto NodeTerminationLambda = [&]( const FEMTreeNode *node ){ return _localDepth( node )==d; };
-		for( FEMTreeNode* node=_tree->nextNode( NodeTerminationLambda , NULL ) ; node ; node=_tree->nextNode( NodeTerminationLambda , node ) ) if( _localDepth( node )==d && IsActiveNode< Dim >( node->children ) ) nodes.push_back( node );
+		for( FEMTreeNode* node=_tree->nextNode( NodeTerminationLambda , NULL ) ; node ; node=_tree->nextNode( NodeTerminationLambda , node ) ) 
+			if( _localDepth( node )==d && IsActiveNode< Dim >( node->children ) ) nodes.push_back( node );
 		ThreadPool::Parallel_for( 0 , nodes.size() , [&]( unsigned int thread , size_t i )
 		{
 			NeighborKey& neighborKey = neighborKeys[ thread ];
@@ -577,7 +597,8 @@ void FEMTree< Dim , Real >::finalizeForMultigrid( LocalDepth fullDepth , const H
 	std::vector< node_index_type > map;
 	_sNodes.set( *_tree , &map );
 	_setSpaceValidityFlags();
-	for( FEMTreeNode* node=_tree->nextNode() ; node ; node=_tree->nextNode( node ) ) if( !IsActiveNode< Dim >( node ) ) node->nodeData.nodeIndex = -1;
+	for( FEMTreeNode* node=_tree->nextNode() ; node ; node=_tree->nextNode( node ) ) 
+		if( !IsActiveNode< Dim >( node ) ) node->nodeData.nodeIndex = -1;
 	_reorderDenseOrSparseNodeData( &map[0] , _sNodes.size() , data ... );
 	MemoryUsage();
 }
@@ -693,16 +714,17 @@ void FEMTree< Dim , Real >::_clipTree( const HasDataFunctor& f , LocalDepth full
 {
 	std::vector< FEMTreeNode * > nodes;
 	auto NodeTerminationLambda = [&]( const FEMTreeNode *node ){ return _localDepth( node )==fullDepth; };
-	for( FEMTreeNode* temp=_tree->nextNode( NodeTerminationLambda , NULL ) ; temp ; temp=_tree->nextNode( NodeTerminationLambda , temp ) ) if( _localDepth( temp )==fullDepth ) nodes.push_back( temp );
-	ThreadPool::Parallel_for( 0 , nodes.size() , [&]( unsigned int , size_t i )
-	{
-		for( FEMTreeNode* node=nodes[i]->nextNode() ; node ; node=nodes[i]->nextNode(node) ) if( node->children )
-		{
-			bool hasData = false;
-			for( int c=0 ; c<(1<<Dim) && !hasData ; c++ ) hasData |= f( node->children + c );
-			for( int c=0 ; c<(1<<Dim) ; c++ ) SetGhostFlag< Dim >( node->children+c , !hasData );
+	for( FEMTreeNode* temp=_tree->nextNode( NodeTerminationLambda , NULL ) ; temp ; temp=_tree->nextNode( NodeTerminationLambda , temp ) ) 
+		if( _localDepth( temp )==fullDepth ) nodes.push_back( temp );
+	ThreadPool::Parallel_for( 0 , nodes.size() , 
+		[&]( unsigned int , size_t i ) {
+			for( FEMTreeNode* node=nodes[i]->nextNode() ; node ; node=nodes[i]->nextNode(node) ) 
+				if( node->children ) {
+					bool hasData = false;
+					for( int c=0 ; c<(1<<Dim) && !hasData ; c++ ) hasData |= f( node->children + c );
+					for( int c=0 ; c<(1<<Dim) ; c++ ) SetGhostFlag< Dim >( node->children+c , !hasData );
+				}
 		}
-	}
 	);
 }
 
@@ -932,7 +954,8 @@ SparseNodeData< DualPointInfo< Dim , Real , T , PointD > , IsotropicUIntPack< Di
 	ThreadPool::Parallel_for( 0 , iInfo.size() , [&]( unsigned int , size_t i )
 	{
 		Real w = iInfo[i].weight;
-		iInfo[i] /= w ; iInfo[i].weight = w;
+		iInfo[i] /= w; 
+		iInfo[i].weight = w;
 	}
 	);
 	LocalDepth maxDepth = _spaceRoot->maxDepth();

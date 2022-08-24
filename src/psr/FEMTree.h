@@ -183,10 +183,10 @@ struct ConstOverlapKey< UIntPack< Degrees ... > > : public RegularTreeNode< size
 template< typename Pack > struct PointSupportKey{ };
 template< unsigned int ... Degrees >
 struct PointSupportKey< UIntPack< Degrees ... > > : public RegularTreeNode< sizeof...(Degrees) , FEMTreeNodeData , depth_and_offset_type >::template NeighborKey< UIntPack< BSplineSupportSizes< Degrees >::SupportEnd ... > , UIntPack< (-BSplineSupportSizes< Degrees >::SupportStart ) ... > >
-{
-	typedef UIntPack< ( BSplineSupportSizes< Degrees >::SupportEnd   ) ... > LeftRadii;
-	typedef UIntPack< (-BSplineSupportSizes< Degrees >::SupportStart ) ... > RightRadii;
-	typedef UIntPack< ( BSplineSupportSizes< Degrees >::SupportEnd - BSplineSupportSizes< Degrees >::SupportStart + 1 ) ... > Sizes;
+{ // NeighborKey
+	typedef UIntPack< ( BSplineSupportSizes< Degrees >::SupportEnd   ) ... > LeftRadii; // Degree / 2 = 1
+	typedef UIntPack< (-BSplineSupportSizes< Degrees >::SupportStart ) ... > RightRadii; // (Degree + 1) / 2 = 1
+	typedef UIntPack< ( BSplineSupportSizes< Degrees >::SupportEnd - BSplineSupportSizes< Degrees >::SupportStart + 1 ) ... > Sizes; // Degree / 2 + (Degree + 1) / 2 + 1 = 3
 };
 template< typename Pack > struct ConstPointSupportKey{ };
 template< unsigned int ... Degrees >
@@ -286,7 +286,9 @@ protected:
 		BlockedVector< node_index_type > newIndices;
 		newIndices.resize( newNodeCount );
 		for( node_index_type i=0 ; i<(node_index_type)newNodeCount ; i++ ) newIndices[i] = -1;
-		for( node_index_type i=0 ; i<(node_index_type)_indices.size() ; i++ ) if( newNodeIndices[i]!=-1 && newNodeIndices[i]<(node_index_type)newNodeCount ) newIndices[ newNodeIndices[i] ] = _indices[i];
+		for( node_index_type i=0 ; i<(node_index_type)_indices.size() ; i++ ) 
+			if( newNodeIndices[i]!=-1 && newNodeIndices[i]<(node_index_type)newNodeCount ) 
+				newIndices[ newNodeIndices[i] ] = _indices[i];
 		_indices = newIndices;
 	}
 	BlockedVector< node_index_type > _indices;
@@ -385,8 +387,13 @@ struct TensorDerivatives< UIntPack< D , Ds ... > >
 	static const unsigned int LastDerivative = UIntPack< D , Ds ... >::template Get< sizeof ... (Ds) >();
 	static const unsigned int Dim = _TensorDerivatives::Dim + 1;
 	static const unsigned int Size = _TensorDerivatives::Size * ( D+1 );
-	static void Factor( unsigned int idx , unsigned int derivatives[Dim] ){ derivatives[0] = idx / _TensorDerivatives::Size ; _TensorDerivatives::Factor( idx % _TensorDerivatives::Size , derivatives+1 ); }
-	static unsigned int Index( const unsigned int derivatives[Dim] ){ return _TensorDerivatives::Index( derivatives + 1 ) + _TensorDerivatives::Size * derivatives[0]; }
+	static void Factor( unsigned int idx , unsigned int derivatives[Dim] ){ 
+		derivatives[0] = idx / _TensorDerivatives::Size ; 
+		_TensorDerivatives::Factor( idx % _TensorDerivatives::Size , derivatives+1 ); 
+	}
+	static unsigned int Index( const unsigned int derivatives[Dim] ){ 
+		return _TensorDerivatives::Index( derivatives + 1 ) + _TensorDerivatives::Size * derivatives[0]; 
+	}
 };
 template< unsigned int D >
 struct TensorDerivatives< UIntPack< D > >
@@ -760,7 +767,7 @@ public:
 		virtual RestrictionProlongation< UIntPack< TDegrees ... > >& tRestrictionProlongation( void ) = 0;
 		virtual RestrictionProlongation< UIntPack< CDegrees ... > >& cRestrictionProlongation( void ) = 0;
 
-		struct CCStencil : public DynamicWindow< Point< double , CDim > , UIntPack< BSplineOverlapSizes< TDegrees , CDegrees >::OverlapSize ... > >{ };
+		struct CCStencil : public DynamicWindow< Point< double , CDim > , UIntPack< BSplineOverlapSizes< TDegrees , CDegrees >::OverlapSize ... > >{ }; // OverlapSize = 2 + 2 + 1 = 5
 #ifdef SHOW_WARNINGS
 #pragma message ( "[WARNING] Why are the parent/child stencils so big?" )
 #endif // SHOW_WARNINGS
@@ -990,8 +997,8 @@ public:
 		static const unsigned int Dim = sizeof ... ( TSignatures );
 		typedef typename BaseFEMIntegrator::template Constraint< UIntPack< FEMSignature< TSignatures >::Degree ... > , UIntPack< FEMSignature< CSignatures >::Degree ... > , CDim > Base;
 
-		static const unsigned int TDerivativeSize = TensorDerivatives< UIntPack< TDerivatives ... > >::Size;
-		static const unsigned int CDerivativeSize = TensorDerivatives< UIntPack< CDerivatives ... > >::Size;
+		static const unsigned int TDerivativeSize = TensorDerivatives< UIntPack< TDerivatives ... > >::Size; // TDerivatives = 1 1 1  TDerivativeSize = 2*2*2 = 8
+		static const unsigned int CDerivativeSize = TensorDerivatives< UIntPack< CDerivatives ... > >::Size; // CDerivatives = 0 0 0  CDerivativeSize = 1*1*1 = 1
 		static inline void TFactorDerivatives( unsigned int idx , unsigned int d[ Dim ] ){ TensorDerivatives< UIntPack< TDerivatives ... > >::Factor( idx , d ); }
 		static inline void CFactorDerivatives( unsigned int idx , unsigned int d[ Dim ] ){ TensorDerivatives< UIntPack< CDerivatives ... > >::Factor( idx , d ); }
 		static inline unsigned int TDerivativeIndex( const unsigned int d[ Dim ] ){ return TensorDerivatives< UIntPack< TDerivatives ... > >::Index( d ); }
@@ -1011,7 +1018,9 @@ public:
 			for( unsigned int d1=0 ; d1<TDerivativeSize ; d1++ ) for( unsigned int d2=0 ; d2<CDerivativeSize ; d2++ )
 			{
 				_WeightedIndices w(d1,d2);
-				for( unsigned int c=0 ; c<CDim ; c++ ) if( weights[c](d1,d2)>0 ) w.indices.push_back( std::pair< unsigned int , double >( c , weights[c](d1,d2) ) );
+				for( unsigned int c=0 ; c<CDim ; c++ ) 
+					if( weights[c](d1,d2)>0 ) 
+						w.indices.push_back( std::pair< unsigned int , double >( c , weights[c](d1,d2) ) );
 				if( w.indices.size() ) _weightedIndices.push_back(w);
 			}
 		}
@@ -1617,7 +1626,7 @@ public:
 #pragma message( "[WARNING] This should not be isotropic" )
 #endif // SHOW_WARNINGS
 	template< unsigned int DensityDegree > 
-struct DensityEstimator : public SparseNodeData< Real , IsotropicUIntPack< Dim , FEMDegreeAndBType< DensityDegree >::Signature > >
+	struct DensityEstimator : public SparseNodeData< Real , IsotropicUIntPack< Dim , FEMDegreeAndBType< DensityDegree >::Signature > >
 	{
 		DensityEstimator( int kernelDepth , int coDimension ) : _kernelDepth( kernelDepth ) , _coDimension( coDimension ){ ; }
 		int coDimension( void ) const { return _coDimension; }
@@ -1647,7 +1656,8 @@ protected:
 	int _localInset( LocalDepth d ) const { return _depthOffset<=1 ? 0 : 1<<( d + _depthOffset - 1 ); }
 	void _localDepthAndOffset( const FEMTreeNode* node , LocalDepth& d , LocalOffset& off ) const
 	{
-		node->depthAndOffset( d , off ) ; d -= _depthOffset;
+		node->depthAndOffset( d , off );
+		d -= _depthOffset;
 		int inset = _localInset( d );
 		for( int d=0 ; d<Dim ; d++ ) off[d] -= inset;
 	}
@@ -2178,8 +2188,12 @@ public:
 
 	// Add multiple-dimensions -> one-dimension constraints
 	template< typename T , unsigned int ... FEMDegrees , unsigned int ... FEMSigs , unsigned int ... CDegrees , unsigned int ... CSigs , unsigned int CDim >
-	void addFEMConstraints( typename BaseFEMIntegrator::template Constraint< UIntPack< FEMDegrees ... > , UIntPack< CDegrees ... > , CDim >& F , const _SparseOrDenseNodeData< Point< T , CDim > , UIntPack< CSigs ... > >& coefficients , DenseNodeData< T , UIntPack< FEMSigs ... > >& constraints , LocalDepth maxDepth ) const
-	{
+	void addFEMConstraints( 
+		typename BaseFEMIntegrator::template Constraint< UIntPack< FEMDegrees ... > , UIntPack< CDegrees ... > , CDim >& F , 
+		const _SparseOrDenseNodeData< Point< T , CDim > , UIntPack< CSigs ... > >& coefficients , 
+		DenseNodeData< T , UIntPack< FEMSigs ... > >& constraints , 
+		LocalDepth maxDepth 
+	) const {
 		typedef SparseNodeData< Point< T , CDim > , UIntPack< CSigs ... > > SparseType;
 		typedef  DenseNodeData< Point< T , CDim > , UIntPack< CSigs ... > >  DenseType;
 		static_assert( sizeof...( FEMDegrees )==Dim && sizeof...( FEMSigs )==Dim && sizeof...( CDegrees )==Dim && sizeof...( CSigs )==Dim  , "[ERROR] Dimensions don't match" );
