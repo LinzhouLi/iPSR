@@ -14,7 +14,7 @@ else()
 endif()
 
 # Find installed Open3D, which exports Open3D::Open3D
-set(Open3D_ROOT "D:/CODE/C++/Open3D/build/open3d_install")
+set(Open3D_ROOT "E:/open3d-devel-windows-amd64-0.15.1")
 find_package(Open3D REQUIRED)
 
 add_executable(iPSR)
@@ -27,9 +27,9 @@ if(WIN32)
     get_target_property(open3d_type Open3D::Open3D TYPE)
     if(open3d_type STREQUAL "SHARED_LIBRARY")
         message(STATUS "Copying Open3D.dll to ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
-        add_custom_command(TARGET Draw POST_BUILD
+        add_custom_command(TARGET iPSR POST_BUILD
                            COMMAND ${CMAKE_COMMAND} -E copy
-                                   ${CMAKE_INSTALL_PREFIX}/bin/Open3D.dll
+                                   ${Open3D_ROOT}/bin/Open3D.dll
                                    ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>)
     endif()
 endif()
